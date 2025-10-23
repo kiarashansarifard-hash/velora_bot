@@ -44,7 +44,7 @@ def get_dollar_price():
     for h3 in soup.find_all("h3"):
         if "نرخ فعلی" in h3.get_text():
             return h3.get_text()
-    return "قیمت پیدا نشد 😕
+    return "قیمت پیدا نشد 😕"
 
 
 @bot.message_handler(func=lambda m: True)
