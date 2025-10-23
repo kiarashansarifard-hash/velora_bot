@@ -4,6 +4,7 @@ import random
 import time
 import requests
 import pytz
+from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 from telebot.types import Message
 from flask import Flask
@@ -54,43 +55,9 @@ def reply_to_price(message):
         price = get_dollar_price()
         bot.reply_to(message, f"💵 قیمت دلار: {price}")
     
-def get_crypto_prices():
-    try:
-        url = "https://api.coingecko.com/api/v3/simple/price"
-        params = {
-            "ids": "bitcoin,ethereum,tether",
-            "vs_currencies": "usd",
-            "include_24hr_change": "true"
-        }
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
 
-        message = "📊 قیمت ارزهای دیجیتال:\n\n"
 
-        if "bitcoin" in data:
-            btc_price = data["bitcoin"]["usd"]
-            btc_change = data["bitcoin"].get("usd_24h_change", 0)
-            change_emoji = "📈" if btc_change > 0 else "📉"
-            message += f"₿ بیت کوین: ${btc_price:,.2f}\n"
-            message += f"{change_emoji} تغییرات 24 ساعت: {btc_change:.2f}%\n\n"
-
-        if "ethereum" in data:
-            eth_price = data["ethereum"]["usd"]
-            eth_change = data["ethereum"].get("usd_24h_change", 0)
-            change_emoji = "📈" if eth_change > 0 else "📉"
-            message += f"Ξ اتریوم: ${eth_price:,.2f}\n"
-            message += f"{change_emoji} تغییرات 24 ساعت: {eth_change:.2f}%\n\n"
-
-        if "tether" in data:
-            usdt_price = data["tether"]["usd"]
-            message += f"₮ تتر (USDT): ${usdt_price:.4f}\n"
-
-        message += "\n" + get_usd_price()
-
-        return message
-    except Exception as e:
-        return f"❌ خطا در دریافت قیمت: {str(e)}"
+        
 
 def get_current_datetime():
     try:
