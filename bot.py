@@ -37,16 +37,23 @@ TRIGGER = {
 
 muted_users = {}
 
-def get_usd_price():
-    try:
-        response = requests.get("https://api.exchangerate.host/latest?base=USD&symbols=IRR")
-        response.raise_for_status()
-        data = response.json()
-        ir_price = data["rates"]["IRR"]
-        return f"💱 نرخ دلار: {ir_price:,.0f} ریال"
-    except Exception as e:
-        return f"❌ خطا در دریافت نرخ دلار: {str(e)}"
+def get_dollar_price():
+    url = "https://www.tgju.org/profile/usd"
+    response = requests.get(url)
+    soup = BeautifulSoup(response.text, "html.parser")
+    for h3 in soup.find_all("h3"):
+        if "نرخ فعلی" in h3.get_text():
+            return h3.get_text()
+    return "قیمت پیدا نشد 😕
 
+
+@bot.message_handler(func=lambda m: True)
+def reply_to_price(message):
+    text = message.text.lower()
+    if "ولورا" in text and "قیمت دلار" in text:
+        price = get_dollar_price()
+        bot.reply_to(message, f"💵 قیمت دلار: {price}")
+    
 def get_crypto_prices():
     try:
         url = "https://api.coingecko.com/api/v3/simple/price"
