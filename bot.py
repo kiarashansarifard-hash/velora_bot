@@ -36,13 +36,16 @@ TRIGGER = {
 muted_users = {}
 
 
+def get_crypto_price(symbol):
+    ...
+    return "❌ خطا در دریافت قیمت رمزارز"
 
-
+# ✅ تابع جدید نوبیتکس
 def get_nobitex_prices():
-    """دریافت قیمت‌ها از API رسمی نوبیتکس"""
+    """دریافت قیمت‌ها از نوبیتکس با پراکسی جهانی"""
     try:
-        url = "https://api.nobitex.ir/market/stats"
-        res = requests.get(url, timeout=10)
+        proxy_url = "https://api.allorigins.win/raw?url=https://api.nobitex.ir/market/stats"
+        res = requests.get(proxy_url, timeout=10)
         data = res.json()["stats"]
 
         usdt = float(data["usdt-irt"]["latest"])
@@ -59,21 +62,8 @@ def get_nobitex_prices():
         )
         return message
     except Exception as e:
-        return f"❌ خطا در دریافت داده از نوبیتکس: {e}"
+        return f"❌ خطا در دریافت داده از نوبیتکس (پراکسی): {e}"
 
-def get_current_datetime():
-    try:
-        tehran_tz = pytz.timezone('Asia/Tehran')
-        now = datetime.now(tehran_tz)
-        persian_weekdays = {
-            0: "دوشنبه", 1: "سه‌شنبه", 2: "چهارشنبه",
-            3: "پنجشنبه", 4: "جمعه", 5: "شنبه", 6: "یکشنبه"
-        }
-        weekday = persian_weekdays[now.weekday()]
-        message = f"📅 تاریخ و ساعت دقیق:\n\n📆 {weekday}\n🗓 {now.strftime('%Y/%m/%d')}\n⏰ {now.strftime('%H:%M:%S')}\n🌍 منطقه زمانی: تهران (GMT+3:30)"
-        return message
-    except Exception as e:
-        return f"❌ خطا در دریافت تاریخ: {str(e)}"
 
 
 
