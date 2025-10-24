@@ -22,13 +22,9 @@ if not TOKEN:
     raise ValueError("TOKEN environment variable is not set!")
 
 bot = telebot.TeleBot(TOKEN)
-
-# ✅ آدرس دامنه رندر تو
 RENDER_URL = "https://velora-bot.onrender.com"
 bot.remove_webhook()
 bot.set_webhook(url=f"{RENDER_URL}/{TOKEN}")
-
-# -------------------- متغیرها --------------------
 MUTE_COMMAND = "دهن گالتو ببند نیگا"
 MUTE_DURATION_DEFAULT = 60
 TRIGGER = {
@@ -39,36 +35,31 @@ TRIGGER = {
 }
 muted_users = {}
 
-# -------------------- توابع قیمت‌ها --------------------
 
-def get_dollar_price():
-    try:
-        url = "https://www.tgju.org/profile/usd"
-        response = requests.get(url, timeout=5)
-        soup = BeautifulSoup(response.text, "html.parser")
-        price = soup.find("span", {"data-col": "info.last_trade.PDrCotVal"}).text.strip()
-        return f"{price} تومان"
-    except:
-        return "❌ خطا در دریافت قیمت دلار"
 
-def get_gold_price():
-    try:
-        url = "https://www.tgju.org/profile/gold-geram18"
-        response = requests.get(url, timeout=5)
-        soup = BeautifulSoup(response.text, "html.parser")
-        price = soup.find("span", {"data-col": "info.last_trade.PDrCotVal"}).text.strip()
-        return f"{price} تومان"
-    except:
-        return "❌ خطا در دریافت قیمت طلا"
 
-def get_crypto_price(symbol):
+def get_nobitex_prices():
+    """دریافت قیمت‌ها از API رسمی نوبیتکس"""
     try:
-        url = f"https://api.coingecko.com/api/v3/simple/price?ids={symbol}&vs_currencies=usd"
-        data = requests.get(url, timeout=5).json()
-        usd_price = data[symbol]["usd"]
-        return f"${usd_price:,.2f}"
-    except:
-        return "❌ خطا در دریافت قیمت رمزارز"
+        url = "https://api.nobitex.ir/market/stats"
+        res = requests.get(url, timeout=10)
+        data = res.json()["stats"]
+
+        usdt = float(data["usdt-irt"]["latest"])
+        btc_usdt = float(data["btc-usdt"]["latest"])
+        eth_usdt = float(data["eth-usdt"]["latest"])
+        xrp_usdt = float(data["xrp-usdt"]["latest"])
+
+        message = (
+            f"📊 قیمت‌ها از نوبیتکس:\n\n"
+            f"💵 دلار (تتر): {usdt:,.0f} تومان\n"
+            f"₿ بیت‌کوین: ${btc_usdt:,.2f}\n"
+            f"Ξ اتریوم: ${eth_usdt:,.2f}\n"
+            f"💠 ریپل: ${xrp_usdt:,.3f}"
+        )
+        return message
+    except Exception as e:
+        return f"❌ خطا در دریافت داده از نوبیتکس: {e}"
 
 def get_current_datetime():
     try:
@@ -84,30 +75,23 @@ def get_current_datetime():
     except Exception as e:
         return f"❌ خطا در دریافت تاریخ: {str(e)}"
 
-# -------------------- هندلرهای پیام --------------------
+
+
 
 @bot.message_handler(func=lambda m: True)
 def handle_all_messages(message):
     text = message.text.lower()
 
     if "ولورا" in text:
-        # --- قیمت‌ها ---
-        if "قیمت دلار" in text:
-            bot.reply_to(message, f"💵 قیمت دلار: {get_dollar_price()}")
-        elif "قیمت طلا" in text:
-            bot.reply_to(message, f"🏅 قیمت طلا ۱۸ عیار: {get_gold_price()}")
-        elif "قیمت بیت کوین" in text:
-            bot.reply_to(message, f"₿ قیمت بیت‌کوین: {get_crypto_price('bitcoin')}")
-        elif "قیمت تتر" in text:
-            bot.reply_to(message, f"💲 قیمت تتر: {get_crypto_price('tether')}")
-        elif "قیمت اتریوم" in text:
-            bot.reply_to(message, f"🪙 قیمت اتریوم: {get_crypto_price('ethereum')}")
-        elif any(k in text for k in ['تاریخ','ساعت','چند وقته','چندمه']):
+        if any(k in text for k in ["قیمت", "دلار", "بیت", "تتر", "اتریوم", "ریپل", "کریپتو"]):
+            bot.reply_to(message, get_nobitex_prices())
+        elif any(k in text for k in ['تاریخ', 'ساعت', 'چند وقته', 'چندمه']):
             bot.reply_to(message, get_current_datetime())
         else:
             bot.reply_to(message, random.choice(TRIGGER['ولورا']))
 
-# -------------------- میوت کردن --------------------
+
+
 @bot.message_handler(func=lambda message: message.chat.type in ['group','supergroup'])
 def group_assistant(message: Message):
     if not message.from_user or not message.text:
@@ -148,7 +132,7 @@ def group_assistant(message: Message):
         else:
             bot.reply_to(message, f"🔇 {message.reply_to_message.from_user.first_name} پیامش حذف شد! (گروه عادی)")
 
-# -------------------- مسیر Webhook --------------------
+# Webhook
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
     json_str = request.get_data().decode("utf-8")
@@ -159,5 +143,4 @@ def webhook():
 # -------------------- اجرای Flask --------------------
 if __name__ == "__main__":
     print("ربات ولورا با Webhook فعاله ✅")
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
-        
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000))) 
