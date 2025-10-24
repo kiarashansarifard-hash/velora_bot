@@ -2,4 +2,4 @@ pyTelegramBotAPI
 Flask
 requests
 pytz
-beautifulsoup4
+jdatetime
