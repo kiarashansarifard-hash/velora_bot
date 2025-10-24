@@ -23,10 +23,16 @@ if not TOKEN:
 
 bot = telebot.TeleBot(TOKEN)
 
-# ✅ آدرس دامنه رندر تو
+# ✅ آدرس دامنه رندرت (مطمئن شو دقیق باشه، بدون / انتهایی)
 RENDER_URL = "https://velora-bot.onrender.com"
-bot.remove_webhook()
-bot.set_webhook(url=f"{RENDER_URL}/{TOKEN}")
+
+# ست کردن webhook (اگر قبلاً ست نکردی)
+try:
+    bot.remove_webhook()
+    set_result = bot.set_webhook(url=f"{RENDER_URL}/{TOKEN}")
+    print(f"Webhook set result: {set_result}")
+except Exception as e:
+    print(f"⚠️ خطا در ست کردن webhook: {e}")
 
 # -------------------- متغیرها --------------------
 MUTE_COMMAND = "دهن گالتو ببند نیگا"
@@ -37,37 +43,37 @@ TRIGGER = {
         "سلاااام🙌", "سلام بهونه قشنگ من برای زندگی🤣🤣🤣"
     ]
 }
-muted_users = {}
+muted_users = {}  # key: "{chat_id}_{user_id}" -> timestamp_until_unmute
 
-# -------------------- قیمت دلار از API آزاد --------------------
+# -------------------- قیمت‌ها (همون توی فایلت) --------------------
 def get_dollar_price():
     try:
-        # نرخ دلار آزاد از API بدون فیلتر
         url = "https://open.er-api.com/v6/latest/USD"
         data = requests.get(url, timeout=10).json()
         if "rates" not in data or "IRR" not in data["rates"]:
             return "❌ خطا در دریافت نرخ دلار"
-        
-        irr = data["rates"]["IRR"]  # ریال
-        toman = irr / 10  # تبدیل به تومان
+        irr = data["rates"]["IRR"]
+        toman = irr / 10
         return f"{int(toman):,} تومان"
     except Exception as e:
         return f"❌ خطا در دریافت نرخ دلار: {str(e)}"
 
-# -------------------- قیمت طلا از CoinGecko --------------------
 def get_gold_price():
     try:
         url = "https://api.coingecko.com/api/v3/simple/price?ids=gold&vs_currencies=usd"
         data = requests.get(url, timeout=10).json()
         usd_per_ounce = data["gold"]["usd"]
         usd_per_gram = usd_per_ounce / 31.1
-        dollar_toman = float(get_dollar_price().split()[0].replace(",", ""))
+        # توجه: ممکن است get_dollar_price یک پیام خطا برگرداند؛ مراقب باش
+        dollar_text = get_dollar_price()
+        if dollar_text.startswith("❌"):
+            return dollar_text
+        dollar_toman = float(dollar_text.split()[0].replace(",", ""))
         gold_price_toman = usd_per_gram * dollar_toman
         return f"{int(gold_price_toman):,} تومان"
     except Exception as e:
         return f"❌ خطا در دریافت قیمت طلا: {str(e)}"
 
-# -------------------- قیمت رمزارزها از CoinGecko --------------------
 def get_crypto_price(symbol):
     try:
         url = f"https://api.coingecko.com/api/v3/simple/price?ids={symbol}&vs_currencies=usd"
@@ -92,11 +98,12 @@ def get_current_datetime():
     except Exception as e:
         return f"❌ خطا در دریافت تاریخ: {str(e)}"
 
-# -------------------- هندلرهای پیام --------------------
-@bot.message_handler(func=lambda m: True)
-def handle_all_messages(message):
+# -------------------- هندلر پیام‌ها (چت خصوصی فقط) --------------------
+@bot.message_handler(func=lambda m: m.chat.type == 'private')
+def handle_private(message: Message):
+    if not message.text:
+        return
     text = message.text.lower()
-
     if "ولورا" in text:
         if "قیمت دلار" in text:
             bot.reply_to(message, f"💵 قیمت دلار: {get_dollar_price()}")
@@ -113,53 +120,106 @@ def handle_all_messages(message):
         else:
             bot.reply_to(message, random.choice(TRIGGER['ولورا']))
 
-# -------------------- میوت در گروه --------------------
+# -------------------- میوت در گروه (اصلی) --------------------
 @bot.message_handler(func=lambda message: message.chat.type in ['group','supergroup'])
 def group_assistant(message: Message):
-    if not message.from_user or not message.text:
+    if not message.from_user:
         return
 
     chat_id = message.chat.id
     user_id = message.from_user.id
-    text = message.text.strip().lower()
+    text = (message.text or "").strip().lower()
     chat_user_key = f"{chat_id}_{user_id}"
 
-    if chat_user_key in muted_users and time.time() < muted_users[chat_user_key]:
-        try:
-            bot.delete_message(chat_id, message.message_id)
-        except:
-            pass
-        return
-    elif chat_user_key in muted_users:
-        del muted_users[chat_user_key]
+    # ۱) اگر کاربر در لیست میوت هست -> پیام رو حذف کن
+    if chat_user_key in muted_users:
+        if time.time() < muted_users[chat_user_key]:
+            try:
+                bot.delete_message(chat_id, message.message_id)
+                print(f"Deleted message from muted {user_id} in {chat_id}")
+            except Exception as e:
+                print(f"⚠️ خطا در حذف پیام: {e}")
+            return
+        else:
+            # زمان میوت تموم شده، حذف از دیکشنری
+            del muted_users[chat_user_key]
 
-    if message.reply_to_message and message.reply_to_message.from_user and text.startswith(MUTE_COMMAND.lower()):
+    # ۲) دستور ریپلای میوت (ریپلای به پیام هدف)
+    if message.reply_to_message and text.startswith(MUTE_COMMAND.lower()):
         parts = text.split()
         try:
-            duration = int(parts[1])
+            duration = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else MUTE_DURATION_DEFAULT
         except:
             duration = MUTE_DURATION_DEFAULT
 
-        target_user_id = message.reply_to_message.from_user.id
-        target_key = f"{chat_id}_{target_user_id}"
+        target_user = message.reply_to_message.from_user
+        target_key = f"{chat_id}_{target_user.id}"
         muted_users[target_key] = time.time() + duration
 
+        # تلاش برای restrict (فقط اگر سوپرگروپ)
         if message.chat.type == "supergroup":
             try:
                 until_date = datetime.now() + timedelta(seconds=duration)
-                bot.restrict_chat_member(chat_id, target_user_id, can_send_messages=False, until_date=until_date)
-                bot.reply_to(message, f"🔇 {message.reply_to_message.from_user.first_name} برای {duration} ثانیه میوت شد! (سوپرگروپ)")
-            except:
-                bot.reply_to(message, f"🔇 {message.reply_to_message.from_user.first_name} برای {duration} ثانیه میوت شد! (حذف پیام)")
+                # توجه: برای بعضی نسخه‌ها ممکنه نام پارامترها فرق کنه؛ اگر خطا دیدی print می‌کنه
+                bot.restrict_chat_member(chat_id, target_user.id, can_send_messages=False, until_date=until_date)
+                bot.reply_to(message, f"🔇 {target_user.first_name} برای {duration} ثانیه میوت شد! ✅")
+            except Exception as e:
+                print(f"⚠️ restrict_chat_member error: {e}")
+                bot.reply_to(message, f"❌ نتونستم میوت کنم. مطمئنی من ادمینم و حق Restrict دارم؟")
         else:
-            bot.reply_to(message, f"🔇 {message.reply_to_message.from_user.first_name} پیامش حذف شد! (گروه عادی)")
+            # گروه معمولی — حذف پیام‌ها
+            bot.reply_to(message, f"🔇 {target_user.first_name} پیامش حذف شد! (گروه عادی)")
+        return
 
-# -------------------- Webhook --------------------
+    # ۳) کامندهای /mute و /unmute (اختیاری)
+    if text.startswith("/mute") and message.reply_to_message:
+        # مثال: /mute 30
+        parts = text.split()
+        try:
+            duration = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else MUTE_DURATION_DEFAULT
+        except:
+            duration = MUTE_DURATION_DEFAULT
+        target_user = message.reply_to_message.from_user
+        target_key = f"{chat_id}_{target_user.id}"
+        muted_users[target_key] = time.time() + duration
+        try:
+            until_date = datetime.now() + timedelta(seconds=duration)
+            bot.restrict_chat_member(chat_id, target_user.id, can_send_messages=False, until_date=until_date)
+            bot.reply_to(message, f"🔇 {target_user.first_name} برای {duration} ثانیه میوت شد! ✅")
+        except Exception as e:
+            print(f"⚠️ restrict_chat_member error (mute cmd): {e}")
+            bot.reply_to(message, "❌ نتونستم میوت کنم. مطمئن شو من ادمینم.")
+        return
+
+    if text.startswith("/unmute") and message.reply_to_message:
+        target_user = message.reply_to_message.from_user
+        target_key = f"{chat_id}_{target_user.id}"
+        if target_key in muted_users:
+            del muted_users[target_key]
+        try:
+            # برداشتن محدودیت‌ها
+            bot.restrict_chat_member(chat_id, target_user.id, can_send_messages=True)
+            bot.reply_to(message, f"🔊 {target_user.first_name} آن‌میوت شد ✅")
+        except Exception as e:
+            print(f"⚠️ restrict_chat_member error (unmute): {e}")
+            bot.reply_to(message, "❌ نتونستم آن‌میوت کنم. شاید دسترسی ندارم.")
+        return
+
+    # ۴) بقیه رفتارهای گروهی (مثلاً trigger)
+    if 'ولورا' in text:
+        bot.reply_to(message, random.choice(TRIGGER['ولورا']))
+    elif any(k in text for k in ['تاریخ','ساعت','چند وقته','چندمه']):
+        bot.reply_to(message, get_current_datetime())
+
+# -------------------- webhook endpoint --------------------
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
-    json_str = request.get_data().decode("utf-8")
-    update = telebot.types.Update.de_json(json_str)
-    bot.process_new_updates([update])
+    try:
+        json_str = request.get_data().decode("utf-8")
+        update = telebot.types.Update.de_json(json_str)
+        bot.process_new_updates([update])
+    except Exception as e:
+        print(f"⚠️ error processing webhook update: {e}")
     return "OK", 200
 
 # -------------------- اجرای Flask --------------------
