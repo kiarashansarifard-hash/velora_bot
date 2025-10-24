@@ -7,26 +7,28 @@ import pytz
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 from telebot.types import Message
-from flask import Flask
-from threading import Thread
+from flask import Flask, request
 
-app = Flask('')
+# -------------------- تنظیمات Flask --------------------
+app = Flask(__name__)
 
-@app.route('/')
+@app.route("/", methods=["GET", "HEAD"])
 def home():
-    return "I'm alive!"
+    return "I'm alive!", 200
 
-def run():
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
-
-Thread(target=run).start()
-
+# -------------------- تنظیمات Bot --------------------
 TOKEN = os.getenv("TOKEN")
 if not TOKEN:
     raise ValueError("TOKEN environment variable is not set!")
 
 bot = telebot.TeleBot(TOKEN)
 
+# ✅ آدرس دامنه رندر تو
+RENDER_URL = "https://velora-bot.onrender.com"
+bot.remove_webhook()
+bot.set_webhook(url=f"{RENDER_URL}/{TOKEN}")
+
+# -------------------- متغیرها --------------------
 MUTE_COMMAND = "دهن گالتو ببند نیگا"
 MUTE_DURATION_DEFAULT = 60
 TRIGGER = {
@@ -35,57 +37,77 @@ TRIGGER = {
         "سلاااام🙌", "سلام بهونه قشنگ من برای زندگی🤣🤣🤣"
     ]
 }
-
 muted_users = {}
 
+# -------------------- توابع قیمت‌ها --------------------
+
 def get_dollar_price():
-    url = "https://www.tgju.org/profile/usd"
-    response = requests.get(url)
-    soup = BeautifulSoup(response.text, "html.parser")
-    for h3 in soup.find_all("h3"):
-        if "نرخ فعلی" in h3.get_text():
-            return h3.get_text()
-    return "قیمت پیدا نشد 😕"
+    try:
+        url = "https://www.tgju.org/profile/usd"
+        response = requests.get(url, timeout=5)
+        soup = BeautifulSoup(response.text, "html.parser")
+        price = soup.find("span", {"data-col": "info.last_trade.PDrCotVal"}).text.strip()
+        return f"{price} تومان"
+    except:
+        return "❌ خطا در دریافت قیمت دلار"
 
+def get_gold_price():
+    try:
+        url = "https://www.tgju.org/profile/gold-geram18"
+        response = requests.get(url, timeout=5)
+        soup = BeautifulSoup(response.text, "html.parser")
+        price = soup.find("span", {"data-col": "info.last_trade.PDrCotVal"}).text.strip()
+        return f"{price} تومان"
+    except:
+        return "❌ خطا در دریافت قیمت طلا"
 
-@bot.message_handler(func=lambda m: True)
-def reply_to_price(message):
-    text = message.text.lower()
-    if "ولورا" in text and "قیمت دلار" in text:
-        price = get_dollar_price()
-        bot.reply_to(message, f"💵 قیمت دلار: {price}")
-    
-
-
-        
+def get_crypto_price(symbol):
+    try:
+        url = f"https://api.coingecko.com/api/v3/simple/price?ids={symbol}&vs_currencies=usd"
+        data = requests.get(url, timeout=5).json()
+        usd_price = data[symbol]["usd"]
+        return f"${usd_price:,.2f}"
+    except:
+        return "❌ خطا در دریافت قیمت رمزارز"
 
 def get_current_datetime():
     try:
         tehran_tz = pytz.timezone('Asia/Tehran')
         now = datetime.now(tehran_tz)
-
         persian_weekdays = {
-            0: "دوشنبه",
-            1: "سه‌شنبه",
-            2: "چهارشنبه",
-            3: "پنجشنبه",
-            4: "جمعه",
-            5: "شنبه",
-            6: "یکشنبه"
+            0: "دوشنبه", 1: "سه‌شنبه", 2: "چهارشنبه",
+            3: "پنجشنبه", 4: "جمعه", 5: "شنبه", 6: "یکشنبه"
         }
-
         weekday = persian_weekdays[now.weekday()]
-
-        message = f"📅 تاریخ و ساعت دقیق:\n\n"
-        message += f"📆 {weekday}\n"
-        message += f"🗓 {now.strftime('%Y/%m/%d')}\n"
-        message += f"⏰ {now.strftime('%H:%M:%S')}\n"
-        message += f"🌍 منطقه زمانی: تهران (GMT+3:30)\n"
-
+        message = f"📅 تاریخ و ساعت دقیق:\n\n📆 {weekday}\n🗓 {now.strftime('%Y/%m/%d')}\n⏰ {now.strftime('%H:%M:%S')}\n🌍 منطقه زمانی: تهران (GMT+3:30)"
         return message
     except Exception as e:
         return f"❌ خطا در دریافت تاریخ: {str(e)}"
 
+# -------------------- هندلرهای پیام --------------------
+
+@bot.message_handler(func=lambda m: True)
+def handle_all_messages(message):
+    text = message.text.lower()
+
+    if "ولورا" in text:
+        # --- قیمت‌ها ---
+        if "قیمت دلار" in text:
+            bot.reply_to(message, f"💵 قیمت دلار: {get_dollar_price()}")
+        elif "قیمت طلا" in text:
+            bot.reply_to(message, f"🏅 قیمت طلا ۱۸ عیار: {get_gold_price()}")
+        elif "قیمت بیت کوین" in text:
+            bot.reply_to(message, f"₿ قیمت بیت‌کوین: {get_crypto_price('bitcoin')}")
+        elif "قیمت تتر" in text:
+            bot.reply_to(message, f"💲 قیمت تتر: {get_crypto_price('tether')}")
+        elif "قیمت اتریوم" in text:
+            bot.reply_to(message, f"🪙 قیمت اتریوم: {get_crypto_price('ethereum')}")
+        elif any(k in text for k in ['تاریخ','ساعت','چند وقته','چندمه']):
+            bot.reply_to(message, get_current_datetime())
+        else:
+            bot.reply_to(message, random.choice(TRIGGER['ولورا']))
+
+# -------------------- میوت کردن --------------------
 @bot.message_handler(func=lambda message: message.chat.type in ['group','supergroup'])
 def group_assistant(message: Message):
     if not message.from_user or not message.text:
@@ -126,12 +148,16 @@ def group_assistant(message: Message):
         else:
             bot.reply_to(message, f"🔇 {message.reply_to_message.from_user.first_name} پیامش حذف شد! (گروه عادی)")
 
-    elif 'ولورا' in text:
-        bot.reply_to(message, random.choice(TRIGGER['ولورا']))
-    elif any(k in text for k in ['قیمت','کریپتو','بیت کوین','اتریوم','تتر']):
-        bot.reply_to(message, get_crypto_prices())
-    elif any(k in text for k in ['تاریخ','ساعت','چند وقته','چندمه']):
-        bot.reply_to(message, get_current_datetime())
+# -------------------- مسیر Webhook --------------------
+@app.route(f"/{TOKEN}", methods=["POST"])
+def webhook():
+    json_str = request.get_data().decode("utf-8")
+    update = telebot.types.Update.de_json(json_str)
+    bot.process_new_updates([update])
+    return "OK", 200
 
-print("ربات ولورا فعاله ✅")
-bot.infinity_polling(skip_pending=True)
+# -------------------- اجرای Flask --------------------
+if __name__ == "__main__":
+    print("ربات ولورا با Webhook فعاله ✅")
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+        
